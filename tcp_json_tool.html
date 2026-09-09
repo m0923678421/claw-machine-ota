@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClawCrane TCP JSON 產生器</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; color: #333; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 600px; width: 100%; }
+        h1 { color: #2c3e50; text-align: center; margin-top: 0; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #34495e; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #bdc3c7; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        input:focus, select:focus { outline: none; border-color: #3498db; box-shadow: 0 0 5px rgba(52, 152, 219, 0.5); }
+        .btn { background: #3498db; color: white; padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; width: 100%; font-weight: bold; transition: background 0.3s; }
+        .btn:hover { background: #2980b9; }
+        pre { background: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .copy-btn { background: #27ae60; margin-top: 10px; }
+        .copy-btn:hover { background: #2ecc71; }
+        .dynamic-field { display: none; }
+        #qrcode { margin-top: 20px; display: flex; justify-content: center; background: white; padding: 10px; border-radius: 8px; }
+        #qrcode img { max-width: 100%; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <h1>ClawCrane TCP JSON 產生器</h1>
+
+    <div class="form-group">
+        <label for="cmdSelect">指令 (Command)</label>
+        <select id="cmdSelect" onchange="updateFields()">
+            <option value="wifi_scan">掃描 WiFi (wifi_scan)</option>
+            <option value="get_info">讀取機台設定 (get_info)</option>
+            <option value="set_config">寫入設定 (set_config)</option>
+            <option value="blink">測試閃爍 (blink)</option>
+            <option value="exit_config">退出設定模式 (exit_config)</option>
+            <option value="custom_json">自訂 JSON (自動算 Checksum)</option>
+        </select>
+    </div>
+
+    <div id="fields_set_config" class="dynamic-field form-group">
+        <label>WiFi SSID</label><input type="text" id="cfg_ssid" placeholder="MyWiFi"><br><br>
+        <label>WiFi 密碼</label><input type="password" id="cfg_pass" placeholder="password"><br><br>
+        <label>WiFi 隱藏 (Hidden)</label>
+        <select id="cfg_wifi_hidden">
+            <option value="false">否 (false)</option>
+            <option value="true">是 (true)</option>
+        </select><br><br>
+        <label>MQTT 主機</label><input type="text" id="cfg_host" placeholder="broker.hivemq.com"><br><br>
+        <label>MQTT Port</label><input type="number" id="cfg_port" value="8883"><br><br>
+        <label>設備 ID</label><input type="text" id="cfg_cid" placeholder="claw-001"><br><br>
+        <label>MQTT 帳號 (User)</label><input type="text" id="cfg_mqtt_user" placeholder=""><br><br>
+        <label>MQTT 密碼 (Pass)</label><input type="password" id="cfg_mqtt_pass" placeholder=""><br><br>
+        <label>通訊金鑰 (Secret Key)</label><input type="text" id="cfg_secret_key" placeholder="mysecret"><br><br>
+        <label>指令有效時間 (Cmd Window)</label><input type="number" id="cfg_cmd_window" value="120"><br><br>
+        <label>TCP Checksum 驗證開關</label>
+        <select id="cfg_tcp_chk">
+            <option value="true">開啟 (true)</option>
+            <option value="false" selected>關閉 (false)</option>
+        </select>
+    </div>
+
+    <div id="fields_custom_json" class="dynamic-field form-group">
+        <label>請輸入自訂 JSON：</label>
+        <textarea id="custom_json_input" rows="6" style="width:100%; padding:10px; border: 1px solid #bdc3c7; border-radius: 6px; font-family: monospace;" placeholder='{&#10;  "cmd": "set_timer",&#10;  "claw_timer_sec": 45&#10;}'></textarea>
+    </div>
+
+    <div class="form-group">
+        <label for="addChecksum">是否自動計算並加上 Checksum？</label>
+        <select id="addChecksum">
+            <option value="no">否 (一般情況不需加)</option>
+            <option value="yes">是 (若機台已啟用 TCP Checksum 則必須加)</option>
+        </select>
+        <small style="color:#7f8c8d; display:block; margin-top:4px;">註：TCP Checksum 單純為資料完整性驗證，不使用 Secret Key。</small>
+    </div>
+
+    <button class="btn" onclick="generateJSON()">產生 JSON 與 QR Code</button>
+
+    <h3>結果：</h3>
+    <pre id="output">尚未產生</pre>
+    <button class="btn copy-btn" onclick="copyToClipboard()">複製 JSON</button>
+    
+    <div id="qrcode"></div>
+</div>
+
+<script>
+    function updateFields() {
+        const cmd = document.getElementById('cmdSelect').value;
+        document.querySelectorAll('.dynamic-field').forEach(el => el.style.display = 'none');
+        if (cmd === 'set_config') {
+            document.getElementById('fields_set_config').style.display = 'block';
+        } else if (cmd === 'custom_json') {
+            document.getElementById('fields_custom_json').style.display = 'block';
+        }
+    }
+
+    let qrCode = null;
+
+    async function generateJSON() {
+        const cmd = document.getElementById('cmdSelect').value;
+        const addChecksum = document.getElementById('addChecksum').value === 'yes';
+        
+        let jsonObj = { cmd: cmd };
+
+        if (cmd === 'custom_json') {
+            try {
+                const customText = document.getElementById('custom_json_input').value;
+                if (!customText.trim()) throw new Error("請輸入 JSON 內容");
+                jsonObj = JSON.parse(customText);
+            } catch (e) {
+                document.getElementById('output').textContent = "⚠️ JSON 格式解析失敗：\n" + e.message;
+                document.getElementById('qrcode').innerHTML = '';
+                return;
+            }
+        } else if (cmd === 'set_config') {
+            jsonObj.wifi = {};
+            jsonObj.mqtt = {};
+            jsonObj.security = {};
+
+            const ssid = document.getElementById('cfg_ssid').value;
+            const pass = document.getElementById('cfg_pass').value;
+            const hidden = document.getElementById('cfg_wifi_hidden').value === 'true';
+            if (ssid) jsonObj.wifi.ssid = ssid;
+            if (pass) jsonObj.wifi.pass = pass;
+            jsonObj.wifi.hidden = hidden;
+
+            const host = document.getElementById('cfg_host').value;
+            const port = document.getElementById('cfg_port').value;
+            const cid = document.getElementById('cfg_cid').value;
+            const muser = document.getElementById('cfg_mqtt_user').value;
+            const mpass = document.getElementById('cfg_mqtt_pass').value;
+            if (host) jsonObj.mqtt.host = host;
+            if (port) jsonObj.mqtt.port = parseInt(port);
+            if (cid) jsonObj.mqtt.client_id = cid;
+            if (muser) jsonObj.mqtt.user = muser;
+            if (mpass) jsonObj.mqtt.pass = mpass;
+
+            const skey = document.getElementById('cfg_secret_key').value;
+            const cwin = document.getElementById('cfg_cmd_window').value;
+            if (skey) jsonObj.security.secret_key = skey;
+            if (cwin) {
+                let cw = parseInt(cwin);
+                if (cw < 1 || cw > 600) {
+                    alert('指令有效時間 (Cmd Window) 必須介於 1 ~ 600 秒之間');
+                    return;
+                }
+                jsonObj.security.cmd_window = cw;
+            }
+
+            jsonObj.security.tcp_checksum = document.getElementById('cfg_tcp_chk').value === 'true';
+        }
+
+        // Convert to compact JSON string
+        let jsonStr = JSON.stringify(jsonObj);
+
+        // Calculate Checksum if requested
+        if (addChecksum) {
+            // TCP Checksum uses empty string as secret key, but the firmware logic is SHA256(JSON + ":" + key)
+            // So we must append ":"
+            const dataToHash = jsonStr + ":";
+            const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(dataToHash));
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            
+            // Add checksum back to object
+            jsonObj.checksum = hashHex;
+            jsonStr = JSON.stringify(jsonObj);
+        }
+
+        document.getElementById('output').textContent = jsonStr;
+
+        // Generate QR Code
+        const qrContainer = document.getElementById('qrcode');
+        qrContainer.innerHTML = '';
+        qrCode = new QRCode(qrContainer, {
+            text: jsonStr,
+            width: 256,
+            height: 256,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.L
+        });
+    }
+
+    function copyToClipboard() {
+        const text = document.getElementById('output').textContent;
+        navigator.clipboard.writeText(text).then(() => {
+            alert("已複製到剪貼簿！可以貼上到 TCP 工具了！");
+        });
+    }
+
+    // Init
+    updateFields();
+</script>
+
+</body>
+</html>

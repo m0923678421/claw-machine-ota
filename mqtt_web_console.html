@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>娃娃機 Web 測試中控台</title>
+    <!-- 引入 MQTT.js -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            background-color: #2b6cb0;
+            color: white;
+            padding: 15px 20px;
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .container {
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+            height: calc(100vh - 70px);
+            box-sizing: border-box;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .left-panel {
+            flex: 2;
+        }
+
+        .right-panel {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        h3 {
+            margin-top: 0;
+            color: #2d3748;
+            border-bottom: 2px solid #edf2f7;
+            padding-bottom: 10px;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .config-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .config-item.full-width {
+            grid-column: span 2;
+        }
+
+        .topic-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .topic-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .topic-item input[type="text"] {
+            flex: 1;
+            padding: 6px;
+            font-size: 13px;
+        }
+
+        .topic-item label {
+            margin-bottom: 0;
+            font-weight: normal;
+        }
+
+        label {
+            font-size: 13px;
+            font-weight: bold;
+            color: #4a5568;
+            margin-bottom: 5px;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            padding: 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        button {
+            background-color: #3182ce;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            background-color: #2b6cb0;
+        }
+
+        button:disabled {
+            background-color: #a0aec0;
+            cursor: not-allowed;
+        }
+
+        button.danger {
+            background-color: #e53e3e;
+        }
+
+        button.danger:hover {
+            background-color: #c53030;
+        }
+
+        .log-area {
+            flex: 1;
+            min-height: 50vh;
+            background-color: #1a202c;
+            color: #a0aec0;
+            font-family: 'Fira Code', Consolas, monospace;
+            font-size: 13px;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log-time {
+            color: #718096;
+            margin-right: 10px;
+        }
+
+        .log-rx {
+            color: #48bb78;
+        }
+
+        .log-tx {
+            color: #4299e1;
+        }
+
+        .log-sys {
+            color: #ecc94b;
+        }
+
+        .cmd-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        .cmd-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 12px;
+            background: #faf5ff;
+        }
+
+        .cmd-title {
+            font-weight: bold;
+            color: #553c9a;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .cmd-input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .cmd-input-group input {
+            flex: 1;
+        }
+
+        .cmd-card button {
+            width: 100%;
+            background-color: #805ad5;
+        }
+
+        .cmd-card button:hover {
+            background-color: #6b46c1;
+        }
+
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+
+        .status-badge.connected {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        /* 手機版響應式設計 */
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+                height: auto;
+                overflow: visible;
+            }
+            .panel {
+                min-height: auto;
+            }
+            .left-panel, .right-panel {
+                flex: none;
+                width: 100%;
+            }
+            .config-grid, .topic-list {
+                grid-template-columns: 1fr;
+            }
+            .config-item.full-width {
+                grid-column: span 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <div>🎮 娃娃機 Web 測試中控台</div>
+        <div id="connStatus" class="status-badge">未連線</div>
+    </div>
+
+    <div class="container">
+        <!-- 左側：設定與日誌 -->
+        <div class="panel left-panel">
+            <h3 style="display: flex; justify-content: space-between; align-items: center;">
+                ⚙️ 連線設定
+                <button onclick="clearConfig()" style="padding: 4px 10px; font-size: 12px; background: #e53e3e; color: white;">清除快取</button>
+            </h3>
+            <div id="configCollapseArea">
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>WebSocket Broker URL</label>
+                        <input type="text" id="brokerHost" value="broker.hivemq.com">
+                    </div>
+                    <div class="config-item">
+                        <label>Port (WS: 8000, WSS: 8884)</label>
+                        <input type="number" id="brokerPort" value="8884">
+                    </div>
+                    <div class="config-item">
+                        <label>Username (選填)</label>
+                        <input type="text" id="brokerUser" value="" placeholder="MQTT 帳號">
+                    </div>
+                    <div class="config-item">
+                        <label>Password (選填)</label>
+                        <input type="text" id="brokerPass" value="" placeholder="MQTT 密碼">
+                    </div>
+                    <div class="config-item">
+                        <label>Device ID (機台 ID)</label>
+                        <input type="text" id="deviceId" value="claw-001-AABBCCDD">
+                    </div>
+                    <div class="config-item">
+                        <label>Client ID 前綴 (連線辨識用)</label>
+                        <input type="text" id="clientIdPrefix" value="web-console" placeholder="前綴名稱">
+                    </div>
+                    <div class="config-item full-width">
+                        <label>Secret Key (安全金鑰)</label>
+                        <input type="text" id="secretKey" value="123456">
+                    </div>
+                </div>
+            </div> <!-- 結束 configCollapseArea -->
+
+            <!-- 連線後的精簡摘要區塊 -->
+            <div id="configSummaryArea" style="display: none; background: #ebf8ff; border: 1px solid #3182ce; padding: 12px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; color: #2c5282; line-height: 1.6;">
+                <div style="font-weight: bold; margin-bottom: 4px; color: #2b6cb0;">✅ MQTT 已成功連線</div>
+                <div id="summaryBroker"></div>
+                <div id="summaryDevice"></div>
+            </div>
+
+            <button id="connectBtn" class="full-width" onclick="toggleConnect()" style="margin-bottom: 20px;">連線 MQTT</button>
+
+            <h3 style="display: flex; justify-content: space-between; align-items: center;">
+                <span>📡 訂閱管理 (Topics)</span>
+                <span style="font-size: 13px; font-weight: normal; display: flex; align-items: center; gap: 6px;">
+                    QoS:
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 2px;"><input type="radio" name="subQos" id="qos0" value="0" onchange="onQosChange()" style="width: auto; margin: 0;"> 0</label>
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 2px;"><input type="radio" name="subQos" id="qos1" value="1" checked onchange="onQosChange()" style="width: auto; margin: 0;"> 1</label>
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 2px;"><input type="radio" name="subQos" id="qos2" value="2" onchange="onQosChange()" style="width: auto; margin: 0;"> 2</label>
+                </span>
+            </h3>
+            <div class="topic-list">
+                <div class="topic-item">
+                    <input type="checkbox" id="subStatus" checked onchange="updateSubscription('status', this.checked)">
+                    <label for="subStatus"><code>.../status</code></label>
+                </div>
+                <div class="topic-item">
+                    <input type="checkbox" id="subCustom1" onchange="updateCustomSubscription(1, this.checked)">
+                    <input type="text" id="customTopic1" placeholder="自訂 Topic 1" onchange="handleCustomTopicChange(1)">
+                </div>
+                
+                <div class="topic-item">
+                    <input type="checkbox" id="subEvent" checked onchange="updateSubscription('event', this.checked)">
+                    <label for="subEvent"><code>.../event</code></label>
+                </div>
+                <div class="topic-item">
+                    <input type="checkbox" id="subCustom2" onchange="updateCustomSubscription(2, this.checked)">
+                    <input type="text" id="customTopic2" placeholder="自訂 Topic 2" onchange="handleCustomTopicChange(2)">
+                </div>
+
+                <div class="topic-item">
+                    <input type="checkbox" id="subCmd" checked onchange="updateSubscription('cmd', this.checked)">
+                    <label for="subCmd"><code>.../cmd</code></label>
+                </div>
+                <div class="topic-item">
+                    <input type="checkbox" id="subCustom3" onchange="updateCustomSubscription(3, this.checked)">
+                    <input type="text" id="customTopic3" placeholder="自訂 Topic 3" onchange="handleCustomTopicChange(3)">
+                </div>
+            </div>
+
+            <h3 style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+                <span>⏱️ 指令時間戳 (Timestamp) 模擬測試</span>
+                <label style="font-size: 14px; font-weight: normal; color: #4a5568; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                    <input type="checkbox" id="chkAutoTimestamp" checked onchange="toggleTimestampOptions()">
+                    時間戳
+                </label>
+            </h3>
+            <div class="config-grid" id="timestampOptions" style="margin-bottom: 20px;">
+                <div class="config-item">
+                    <label>產生時間延遲 (秒) - 模擬傳輸延遲 (負值為未來時間)</label>
+                    <input type="number" id="tsDelay" value="5">
+                </div>
+                <div class="config-item">
+                    <label>指令有效時間 (秒) - cmd_window</label>
+                    <input type="number" id="tsWindow" value="120">
+                </div>
+                <div class="config-item full-width" style="flex-direction: row; align-items: center; gap: 8px;">
+                    <label for="simExpire" style="margin: 0; cursor: pointer; color: #c53030; display: flex; align-items: center; gap: 5px;">
+                        <input type="checkbox" id="simExpire" style="width: auto;">
+                        打勾模擬「過期指令」(扣除延遲 + 有效時間)
+                    </label>
+                </div>
+            </div>
+
+            <h3 style="display: flex; justify-content: space-between; align-items: center;">
+                📜 即時通訊日誌
+                <button onclick="document.getElementById('logArea').innerHTML=''"
+                    style="padding: 4px 10px; font-size: 12px; background: #cbd5e0; color: #4a5568;">清空</button>
+            </h3>
+            <div id="logArea" class="log-area"></div>
+        </div>
+
+        <!-- 右側：指令快捷鍵 -->
+        <div class="panel right-panel">
+            <h3 style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span>⚡ 快捷控制面板</span>
+                    <div style="font-size: 14px; display: flex; gap: 10px; font-weight: normal; color: #4a5568;">
+                        <label style="cursor: pointer;"><input type="checkbox" id="chkAutoChecksum" checked onchange="toggleChecksumOptions()"> CHECKSUM</label>
+                    </div>
+                </div>
+                <div id="checksumOptions" style="font-size: 13px; display: flex; gap: 15px; font-weight: normal; color: #4a5568; justify-content: flex-end; align-items: center;">
+                    <label style="cursor: pointer;"><input type="radio" name="checksumMode" id="chkChecksumAuto" value="auto" checked onchange="toggleChecksumOptions()"> 自動</label>
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <input type="radio" name="checksumMode" id="chkChecksumCustom" value="custom" onchange="toggleChecksumOptions()"> 
+                        自訂: <input type="text" id="txtCustomChecksum" placeholder="輸入錯誤CHECKSUM" style="width: 140px; padding: 2px 4px; font-size: 12px;" disabled>
+                    </label>
+                </div>
+            </h3>
+            <div class="cmd-grid" id="cmdPanel" style="opacity: 0.5; pointer-events: none;">
+
+                <div class="cmd-card">
+                    <div class="cmd-title">機台狀態與尋找</div>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="sendCommand({'cmd':'blink'})" style="flex: 1;">發送 blink</button>
+                        <button onclick="sendCommand({'cmd':'get_info'})" style="flex: 1; background-color: #319795;">發送 get_info</button>
+                    </div>
+                </div>
+
+                <div class="cmd-card">
+                    <div class="cmd-title">遊戲秒數設定 (Timer)</div>
+                    <div class="cmd-input-group">
+                        <input type="number" id="timerValue" value="30" placeholder="秒數 (10~300)">
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="sendTimerCmd()" style="flex: 1;">寫入設定</button>
+                        <button onclick="sendCommand({'cmd':'get_timer'})" style="flex: 1; background-color: #319795;">讀取設定</button>
+                    </div>
+                </div>
+
+                <div class="cmd-card">
+                    <div class="cmd-title">心跳包間隔 (Heartbeat)</div>
+                    <div class="cmd-input-group">
+                        <input type="number" id="hbValue" value="60" placeholder="秒數 (10~3600)">
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="sendHeartbeatCmd()" style="flex: 1;">寫入設定</button>
+                        <button onclick="sendCommand({'cmd':'get_heartbeat'})" style="flex: 1; background-color: #319795;">讀取設定</button>
+                    </div>
+                </div>
+
+                <div class="cmd-card">
+                    <div class="cmd-title">觸發 OTA 線上更新</div>
+                    <div class="cmd-input-group">
+                        <textarea id="otaUrl1" rows="3"
+                            style="width: 100%; padding: 6px; border: 1px solid #cbd5e0; border-radius: 4px; font-family: monospace; font-size: 11px; resize: none; word-break: break-all;"
+                            placeholder="韌體 A 網址">https://github.com/m0923678421/claw-machine-ota/raw/refs/heads/main/claw_machine_fw_v1.0.4.bin</textarea>
+                    </div>
+                    <button onclick="sendOtaCmd(1)" style="margin-bottom: 10px;">發送 OTA (版本 A)</button>
+                    <div class="cmd-input-group">
+                        <textarea id="otaUrl2" rows="3"
+                            style="width: 100%; padding: 6px; border: 1px solid #cbd5e0; border-radius: 4px; font-family: monospace; font-size: 11px; resize: none; word-break: break-all;"
+                            placeholder="韌體 B 網址">https://github.com/m0923678421/claw-machine-ota/raw/refs/heads/main/claw_machine_fw_v1.0.5.bin</textarea>
+                    </div>
+                    <button onclick="sendOtaCmd(2)">發送 OTA (版本 B)</button>
+                </div>
+
+                <div class="cmd-card" style="background: #fff5f5; border-color: #feb2b2;">
+                    <div class="cmd-title" style="color: #c53030; display: flex; justify-content: space-between; align-items: center;">
+                        <span>發送自訂 JSON 指令</span>
+                        <label style="font-size: 13px; font-weight: normal; cursor: pointer; color: #4a5568;">
+                            <input type="checkbox" id="chkFullyCustom" style="width: auto; margin-right: 4px;">全自訂
+                        </label>
+                    </div>
+                    <div class="cmd-input-group">
+                        <textarea id="customJson"
+                            style="width: 100%; height: 60px; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-family: monospace;"
+                            placeholder='{"cmd": "some_new_cmd"}'></textarea>
+                    </div>
+                    <button onclick="sendCustomCmd()" style="background-color: #e53e3e;">發送自訂 JSON</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let client = null;
+        let isConnected = false;
+
+        const inputIds = [
+            'brokerHost', 'brokerPort', 'brokerUser', 'brokerPass',
+            'deviceId', 'clientIdPrefix', 'secretKey', 'tsDelay', 'tsWindow', 'simExpire',
+            'chkFullyCustom', 'subStatus', 'subCustom1', 'customTopic1',
+            'subEvent', 'subCustom2', 'customTopic2',
+            'subCmd', 'subCustom3', 'customTopic3',
+            'timerValue', 'hbValue', 'otaUrl1', 'otaUrl2', 'customJson',
+            'qos0', 'qos1', 'qos2'
+        ];
+
+        function saveConfig() {
+            const config = {};
+            inputIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    if (el.type === 'checkbox') config[id] = el.checked;
+                    else config[id] = el.value;
+                }
+            });
+            localStorage.setItem('mqtt_claw_config', JSON.stringify(config));
+        }
+
+        function loadConfig() {
+            const saved = localStorage.getItem('mqtt_claw_config');
+            if (saved) {
+                try {
+                    const config = JSON.parse(saved);
+                    inputIds.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el && config[id] !== undefined) {
+                            if (el.type === 'checkbox') el.checked = config[id];
+                            else el.value = config[id];
+                        }
+                    });
+                } catch (e) {
+                    console.error("載入設定失敗", e);
+                }
+            }
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            loadConfig();
+            inputIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('change', saveConfig);
+                    el.addEventListener('input', saveConfig);
+                }
+            });
+        });
+
+        function clearConfig() {
+            if (confirm('確定要清除所有自動記憶的設定嗎？網頁將會重置為預設值。')) {
+                localStorage.removeItem('mqtt_claw_config');
+                location.reload();
+            }
+        }
+
+        // Web Crypto API 算 SHA-256
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function log(msg, type = 'sys') {
+            const logArea = document.getElementById('logArea');
+            const d = new Date();
+            const time = d.getHours().toString().padStart(2, '0') + ':' +
+                d.getMinutes().toString().padStart(2, '0') + ':' +
+                d.getSeconds().toString().padStart(2, '0') + '.' +
+                d.getMilliseconds().toString().padStart(3, '0');
+            let colorClass = 'log-sys';
+            if (type === 'rx') colorClass = 'log-rx';
+            if (type === 'tx') colorClass = 'log-tx';
+
+            logArea.innerHTML += `<div><span class="log-time">[${time}]</span><span class="${colorClass}">${msg}</span></div>`;
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        function toggleConnect() {
+            try {
+                if (isConnected && client) {
+                    client.end();
+                    return;
+                }
+
+                const host = document.getElementById('brokerHost').value;
+                const port = Number(document.getElementById('brokerPort').value);
+                const prefix = document.getElementById('clientIdPrefix').value || "web-console";
+                const clientId = prefix + "-" + Math.random().toString(16).substr(2, 8);
+
+                const protocol = (port === 8884 || port === 443) ? 'wss' : 'ws';
+                const brokerUrl = `${protocol}://${host}:${port}/mqtt`;
+
+                log(`🔄 正在透過 WebSocket 連線至 ${brokerUrl} ...`, 'sys');
+                log(`🔑 Client ID: ${clientId}`, 'sys');
+                document.getElementById('connectBtn').innerText = '連線中...';
+                document.getElementById('connectBtn').disabled = true;
+
+                const brokerUser = document.getElementById('brokerUser').value;
+                const brokerPass = document.getElementById('brokerPass').value;
+
+                const options = {
+                    clientId: clientId,
+                    keepalive: 60,
+                    clean: true
+                };
+
+                if (brokerUser) options.username = brokerUser;
+                if (brokerPass) options.password = brokerPass;
+
+                client = mqtt.connect(brokerUrl, options);
+
+                client.on('connect', function () {
+                    isConnected = true;
+                    updateStatus(true);
+                    log("✅ MQTT 連線成功！", 'sys');
+
+                    if (document.getElementById('subStatus').checked) updateSubscription('status', true);
+                    if (document.getElementById('subEvent').checked) updateSubscription('event', true);
+                    if (document.getElementById('subCmd').checked) updateSubscription('cmd', true);
+
+                    for (let i = 1; i <= 3; i++) {
+                        if (document.getElementById(`subCustom${i}`).checked) {
+                            updateCustomSubscription(i, true);
+                        }
+                    }
+                });
+
+                client.on('message', function (topic, message, packet) {
+                    const payloadStr = message.toString();
+                    const isMyCmd = topic.endsWith('/cmd');
+                    const prefix = isMyCmd ? "📥 (回音) " : "📥 ";
+                    let metaInfo = `QoS: ${packet.qos}`;
+                    if (packet.retain) metaInfo += `, Retained`;
+                    log(`${prefix}[${topic}] (${metaInfo})\n   ${payloadStr}`, 'rx');
+                });
+
+                client.on('close', function () {
+                    if (isConnected) {
+                        isConnected = false;
+                        updateStatus(false);
+                        log("🔌 已主動斷開連線", 'sys');
+                    }
+                });
+
+                client.on('error', function (err) {
+                    isConnected = false;
+                    updateStatus(false);
+                    log("❌ 連線失敗: " + err.message, 'sys');
+                    client.end();
+                });
+
+            } catch (e) {
+                log("❌ 程式發生錯誤: " + e.message, 'sys');
+                updateStatus(false);
+            }
+        }
+        function toggleTimestampOptions() {
+            const chk = document.getElementById('chkAutoTimestamp').checked;
+            const optionsDiv = document.getElementById('timestampOptions');
+            if (chk) {
+                optionsDiv.style.opacity = '1';
+                optionsDiv.style.pointerEvents = 'auto';
+            } else {
+                optionsDiv.style.opacity = '0.5';
+                optionsDiv.style.pointerEvents = 'none';
+            }
+        }
+
+        function toggleChecksumOptions() {
+            const chk = document.getElementById('chkAutoChecksum').checked;
+            const optionsDiv = document.getElementById('checksumOptions');
+            const radios = document.getElementsByName('checksumMode');
+            const txtCustom = document.getElementById('txtCustomChecksum');
+            const isCustom = document.getElementById('chkChecksumCustom').checked;
+            
+            if (chk) {
+                optionsDiv.style.opacity = '1';
+                radios.forEach(r => r.disabled = false);
+                txtCustom.disabled = !isCustom;
+            } else {
+                optionsDiv.style.opacity = '0.5';
+                radios.forEach(r => r.disabled = true);
+                txtCustom.disabled = true;
+            }
+        }
+
+        // 當連線狀態改變時，更新 UI
+        function updateStatus(connected) {
+            const btn = document.getElementById('connectBtn');
+            const statusBadge = document.getElementById('connStatus');
+            const cmdPanel = document.getElementById('cmdPanel');
+            const configCollapse = document.getElementById('configCollapseArea');
+            const configSummary = document.getElementById('configSummaryArea');
+
+            btn.disabled = false;
+            if (connected) {
+                btn.innerText = '斷開連線';
+                btn.classList.add('danger');
+                statusBadge.innerText = '🟢 已連線';
+                statusBadge.classList.add('connected');
+                cmdPanel.style.opacity = '1';
+                cmdPanel.style.pointerEvents = 'auto';
+                
+                // 隱藏表單，顯示摘要
+                configCollapse.style.display = 'none';
+                const host = document.getElementById('brokerHost').value;
+                const port = document.getElementById('brokerPort').value;
+                const devId = document.getElementById('deviceId').value;
+                document.getElementById('summaryBroker').innerText = `🔗 Broker: ${host}:${port}`;
+                document.getElementById('summaryDevice').innerText = `📱 Device ID: ${devId}`;
+                configSummary.style.display = 'block';
+            } else {
+                btn.innerText = '連線 MQTT';
+                btn.classList.remove('danger');
+                statusBadge.innerText = '未連線';
+                statusBadge.classList.remove('connected');
+                cmdPanel.style.opacity = '0.5';
+                cmdPanel.style.pointerEvents = 'none';
+                
+                // 恢復顯示表單，隱藏摘要
+                configCollapse.style.display = 'block';
+                configSummary.style.display = 'none';
+            }
+        }
+
+        let customTopicCache = { 1: '', 2: '', 3: '' };
+
+        function getSelectedQos() {
+            if (document.getElementById('qos0') && document.getElementById('qos0').checked) return 0;
+            if (document.getElementById('qos2') && document.getElementById('qos2').checked) return 2;
+            return 1;
+        }
+
+        function onQosChange() {
+            if (!isConnected || !client) return;
+            if (document.getElementById('subStatus').checked) updateSubscription('status', true);
+            if (document.getElementById('subEvent').checked) updateSubscription('event', true);
+            if (document.getElementById('subCmd').checked) updateSubscription('cmd', true);
+            for (let i = 1; i <= 3; i++) {
+                if (document.getElementById(`subCustom${i}`).checked) {
+                    updateCustomSubscription(i, true);
+                }
+            }
+        }
+
+        function updateSubscription(suffix, isSubscribe) {
+            if (!isConnected || !client) return;
+            const deviceId = document.getElementById('deviceId').value;
+            const topic = `claw/v1/${deviceId}/${suffix}`;
+            if (isSubscribe) {
+                const qos = getSelectedQos();
+                client.subscribe(topic, { qos: qos });
+                log(`📡 已訂閱: ${topic} (QoS ${qos})`, 'sys');
+            } else {
+                client.unsubscribe(topic);
+                log(`🔕 已取消訂閱: ${topic}`, 'sys');
+            }
+        }
+
+        function updateCustomSubscription(index, isSubscribe) {
+            if (!isConnected || !client) return;
+            const topicInput = document.getElementById(`customTopic${index}`);
+            const topic = topicInput.value.trim();
+            
+            if (isSubscribe) {
+                if (!topic) {
+                    alert("請先填寫 Topic 名稱！");
+                    document.getElementById(`subCustom${index}`).checked = false;
+                    return;
+                }
+                const qos = getSelectedQos();
+                client.subscribe(topic, { qos: qos });
+                log(`📡 已訂閱: ${topic} (QoS ${qos})`, 'sys');
+                customTopicCache[index] = topic;
+            } else {
+                const cachedTopic = customTopicCache[index] || topic;
+                if (cachedTopic) {
+                    client.unsubscribe(cachedTopic);
+                    log(`🔕 已取消訂閱: ${cachedTopic}`, 'sys');
+                }
+            }
+        }
+
+        function handleCustomTopicChange(index) {
+            const isChecked = document.getElementById(`subCustom${index}`).checked;
+            if (isChecked && isConnected && client) {
+                const oldTopic = customTopicCache[index];
+                if (oldTopic) {
+                    client.unsubscribe(oldTopic);
+                    log(`🔕 已取消訂閱: ${oldTopic}`, 'sys');
+                }
+                updateCustomSubscription(index, true);
+            }
+        }
+
+        // 發送指令的核心邏輯
+        async function sendCommand(baseJson) {
+            if (!isConnected || !client) return;
+
+            const secretKey = document.getElementById('secretKey').value;
+            const deviceId = document.getElementById('deviceId').value;
+            const topic = `claw/v1/${deviceId}/cmd`;
+
+            // 1. 加 Timestamp
+            const chkAutoTimestamp = document.getElementById('chkAutoTimestamp').checked;
+            if (chkAutoTimestamp) {
+                const delaySec = Number(document.getElementById('tsDelay').value) || 0;
+                const windowSec = Number(document.getElementById('tsWindow').value) || 0;
+                const simExpire = document.getElementById('simExpire').checked;
+                
+                let simulatedTs = Math.floor(Date.now() / 1000) - delaySec;
+                if (simExpire) {
+                    simulatedTs -= windowSec;
+                }
+                baseJson['timestamp'] = simulatedTs;
+            }
+
+            // 2. 算 Checksum
+            const chkAutoChecksum = document.getElementById('chkAutoChecksum').checked;
+            if (chkAutoChecksum) {
+                const isAuto = document.getElementById('chkChecksumAuto').checked;
+                if (isAuto) {
+                    const minifiedJson = JSON.stringify(baseJson);
+                    const signString = minifiedJson + ":" + secretKey;
+                    baseJson['checksum'] = await sha256(signString);
+                } else {
+                    const customTxt = document.getElementById('txtCustomChecksum').value;
+                    baseJson['checksum'] = customTxt;
+                }
+            }
+
+            // 3. 發布
+            const finalPayload = JSON.stringify(baseJson);
+
+            try {
+                client.publish(topic, finalPayload, { qos: 1 });
+                log(`📤 [發送] ${topic}\n   ${finalPayload}`, 'tx');
+            } catch (e) {
+                log(`❌ 發送失敗: ${e}`, 'sys');
+            }
+        }
+
+        // 封裝特定參數指令
+        function sendTimerCmd() {
+            const val = Number(document.getElementById('timerValue').value);
+            sendCommand({ 'cmd': 'set_timer', 'value': val });
+        }
+
+        function sendHeartbeatCmd() {
+            const val = Number(document.getElementById('hbValue').value);
+            sendCommand({ 'cmd': 'set_heartbeat', 'value': val });
+        }
+
+        function sendOtaCmd(ver) {
+            const urlId = ver === 1 ? 'otaUrl1' : 'otaUrl2';
+            const url = document.getElementById(urlId).value;
+            sendCommand({ 'cmd': 'ota_update', 'url': url });
+        }
+
+        function sendCustomCmd() {
+            const rawJson = document.getElementById('customJson').value;
+            const chkFullyCustom = document.getElementById('chkFullyCustom').checked;
+
+            if (chkFullyCustom) {
+                if (!isConnected || !client) return;
+                const deviceId = document.getElementById('deviceId').value;
+                const topic = `claw/v1/${deviceId}/cmd`;
+                try {
+                    client.publish(topic, rawJson, { qos: 1 });
+                    log(`📤 [發送 (全自訂)] ${topic}\n   ${rawJson}`, 'tx');
+                } catch (e) {
+                    log(`❌ 發送失敗: ${e}`, 'sys');
+                }
+            } else {
+                try {
+                    const jsonObj = JSON.parse(rawJson);
+                    sendCommand(jsonObj);
+                } catch (e) {
+                    alert('JSON 格式錯誤，請檢查是否有漏掉引號或大括號！\n' + e.message);
+                }
+            }
+        }
+    </script>
+
+</body>
+
+</html>
